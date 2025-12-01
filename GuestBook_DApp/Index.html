@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guestbook DApp</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Playpen+Sans+Thai:wght@100..800&display=swap" rel="stylesheet">
+    <style>
+        body, .btn-primary, .btn-primary:disabled, .fab-btn, .btn-secondary{
+            font-family: "Playpen Sans Thai", cursive;
+            font-optical-sizing: auto;
+            font-weight: 100;
+            font-style: normal;
+        } /*เปลี่ยน font แบบรวมๆ*/
+
+
+        body {max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f4f4f9; }
+        .container {background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 10px rgba(0, 0, 0, 0.2); min-height: 30%; }
+        
+        /* ปุ่มหลัก (ปุ่มยืนยันข้อความ, ปุ่มเชื่อมต่อวอเลท)*/
+        .btn-primary {font-weight: bold; background-color: #ff9900; color: white; border: none; padding: 10px; width: 100%; border-radius: 6px; cursor: pointer;}
+        .btn-primary:disabled {font-weight: bold; background-color: #ccc; cursor: not-allowed; }
+        
+        /* ปุ่มรอง (ปุ่มย้อนกลับ) */
+        .btn-secondary {font-weight: bold; background-color: #ff2525; color: #ffffff; border: 1px solid #ddd; padding: 10px; width: 100%; border-radius: 6px; cursor: pointer; margin-top: 5px; }
+        
+        /* ปุ่มเขียนข้อความใหม่ ไว้ย้ายหน้า aka ปุ่มย้ายหน้า*/
+        .fab-btn {
+            background-color: #037c17; color: white; border: none; padding: 15px 20px;
+            border-radius: 50px; cursor: pointer; box-shadow: 0 4px 10px rgba(33, 150, 243, 0.4);
+            font-weight: bold; margin-bottom: 20px; width: 100%;
+        }
+
+        input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+        .entry { border-bottom: 1px solid #eee; padding: 15px 0; }
+        .name-tag { font-weight: bold; color: #2c3e50; font-size: 1.1em; }
+        .wallet-status { text-align: center; font-size: 0.85em; color: #666; margin-bottom: 20px; background: #eee; padding: 5px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+    <div class="container" x-data="guestbookApp()">
+        
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h2 style="margin: 10px;"><b>
+                📓 Guestbook 📓
+                <span style="font-size: 1em; color: #aaa;">
+                    สมุดเยี่ยม
+                </span>
+            </h2>
+            <span x-show="currentAccount" style="font-size: 0.8em; color: #aaa;">
+                Wallet ของคุณอยู่นี่จ้า
+            </span>
+            <div x-show="currentAccount" class="wallet-status">
+                🦊 <span x-text="shortenAddress(currentAccount)"></span>
+            </div>
+        </div>
+
+        <hr style="margin-bottom: 20px;">
+
+        <div x-show="!currentAccount" style="text-align: center; padding: 40px 0;">
+            <p>🙏🏻 กรุณาเชื่อมต่อกระเป๋าก่อนเริ่มใช้งาน 🙏🏻</p>
+            <button class="btn-primary" @click="connectWallet">[ Connect MetaMask ]</button>
+        </div>
+
+        <div x-show="currentAccount">
+
+            <div x-show="view === 'home'"  x-transition:enter.duration.400ms>
+                <span style="padding-left: 15px"><b>อยากฝากอะไรไว้บ้างไหม?</span> 
+                <br>
+                <button class="fab-btn" @click="view = 'write'">
+                    เขียนลงสมุด ✏️
+                </button>
+
+                <h3 style="margin-top: 0;">ข้อความในสมุด (<span x-text="Guest.length"></span>)</h3>
+                <hr>
+                <div x-show="Guest.length === 0" style="text-align: center; color: #888; padding: 20px;">
+                    ยังไม่มีข้อความ...
+                </div>
+
+                <template x-for="entry in Guest" :key="entry.timestamp">
+                    <div class="entry">
+                        <div>
+                            <span class="name-tag" x-text="entry.w_name"></span> 
+                            <span style="font-size: 0.8em; color: #aaa; margin-left: 5px;">
+                                (<span x-text="shortenAddress(entry.writer)"></span>)
+                            </span>
+                        </div>
+                        <div x-text="entry.message" style="margin: 8px 0; color: #444;"></div>
+                        <div style="font-size: 0.75em; color: #999;">
+                            🕒 <span x-text="formatDate(entry.timestamp)"></span>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <div 
+                x-show="view === 'write'" x-transition:enter.duration.400ms>
+                <h3>✒️✏️</h3>
+                
+                <label>ชื่อ / AKA (also know as) :</label>
+                <input type="text" x-model="name" placeholder="อยากให้เราจดจำคุณว่ายังไง..." :disabled="isLoading">
+                
+                <label>สิ่งที่อยากบอก / อยากเขียน :</label>
+                <input type="text" x-model="message" placeholder="อยากบอกอะไรกับเราบ้าง..." :disabled="isLoading">
+                
+                <p x-show="errorMessage" x-text="errorMessage" style="color: red; font-size: 0.9em;"></p>
+
+                <button class="btn-primary" @click="signGuestbook" :disabled="isLoading || !message || !name">
+                    <span x-show="isLoading">
+                        กำลังบันทึกข้อความรอสักครู่...
+                    </span>
+
+                    <span x-show="!isLoading">
+                        ยืนยันการส่งข้อความ
+                    </span>
+                </button>
+
+                <button class="btn-secondary" @click="view = 'home'" :disabled="isLoading">
+                    ยกเลิก / ย้อนกลับ
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        function guestbookApp() {
+            return {
+                //CONFIG
+                contractAddress: "0x2C5348Eb3481d608857c9e7482D9E9a434DD1bdB",
+                contractABI: [
+                    {
+                        "anonymous": false,
+                        "inputs": [
+                            {
+                                "indexed": true,
+                                "internalType": "address",
+                                "name": "writer",
+                                "type": "address"
+                            },
+                            {
+                                "indexed": false,
+                                "internalType": "string",
+                                "name": "w_name",
+                                "type": "string"
+                            },
+                            {
+                                "indexed": false,
+                                "internalType": "string",
+                                "name": "message",
+                                "type": "string"
+                            },
+                            {
+                                "indexed": false,
+                                "internalType": "uint256",
+                                "name": "timestamp",
+                                "type": "uint256"
+                            }
+                        ],
+                        "name": "New_Msg",
+                        "type": "event"
+                    },
+                    {
+                        "inputs": [
+                            {
+                                "internalType": "string",
+                                "name": "_w_name",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "_message",
+                                "type": "string"
+                            }
+                        ],
+                        "name": "Write_Msg",
+                        "outputs": [],
+                        "stateMutability": "nonpayable",
+                        "type": "function"
+                    },
+                    {
+                        "inputs": [
+                            {
+                                "internalType": "address",
+                                "name": "",
+                                "type": "address"
+                            }
+                        ],
+                        "name": "checkspam",
+                        "outputs": [
+                            {
+                                "internalType": "uint256",
+                                "name": "",
+                                "type": "uint256"
+                            }
+                        ],
+                        "stateMutability": "view",
+                        "type": "function"
+                    },
+                    {
+                        "inputs": [],
+                        "name": "getAll_Msg",
+                        "outputs": [
+                            {
+                                "components": [
+                                    {
+                                        "internalType": "address",
+                                        "name": "writer",
+                                        "type": "address"
+                                    },
+                                    {
+                                        "internalType": "string",
+                                        "name": "w_name",
+                                        "type": "string"
+                                    },
+                                    {
+                                        "internalType": "string",
+                                        "name": "message",
+                                        "type": "string"
+                                    },
+                                    {
+                                        "internalType": "uint256",
+                                        "name": "timestamp",
+                                        "type": "uint256"
+                                    }
+                                ],
+                                "internalType": "struct Guestbook.Guest[]",
+                                "name": "",
+                                "type": "tuple[]"
+                            }
+                        ],
+                        "stateMutability": "view",
+                        "type": "function"
+                    },
+                    {
+                        "inputs": [],
+                        "name": "getTotal_Msg",
+                        "outputs": [
+                            {
+                                "internalType": "uint256",
+                                "name": "",
+                                "type": "uint256"
+                            }
+                        ],
+                        "stateMutability": "view",
+                        "type": "function"
+                    },
+                    {
+                        "inputs": [
+                            {
+                                "internalType": "uint256",
+                                "name": "",
+                                "type": "uint256"
+                            }
+                        ],
+                        "name": "messages",
+                        "outputs": [
+                            {
+                                "internalType": "address",
+                                "name": "writer",
+                                "type": "address"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "w_name",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "string",
+                                "name": "message",
+                                "type": "string"
+                            },
+                            {
+                                "internalType": "uint256",
+                                "name": "timestamp",
+                                "type": "uint256"
+                            }
+                        ],
+                        "stateMutability": "view",
+                        "type": "function"
+                    }
+                ],
+
+                //STATE
+                view: 'home',
+                currentAccount: null,
+                name: '',
+                message: '',
+                Guest: [],
+                isLoading: false,
+                errorMessage: '',
+
+                //INIT
+                async init() {
+                    if (window.ethereum) {
+                        const provider = new ethers.BrowserProvider(window.ethereum);
+                        const accounts = await provider.listAccounts();
+                        if (accounts.length > 0) {
+                            this.currentAccount = accounts[0].address;
+                            this.fetchEntries();
+                        }
+                    }
+                },
+
+                //CONNECT
+                async connectWallet() {
+                    if (!window.ethereum) return alert("Install MetaMask!");
+                    try {
+                        const provider = new ethers.BrowserProvider(window.ethereum);
+                        const accounts = await provider.send("eth_requestAccounts", []);
+                        this.currentAccount = accounts[0];
+                        this.fetchEntries();
+                    } catch (e) { console.error(e); }
+                },
+
+                //READ ALL MSG
+                async fetchEntries() {
+                    if (!this.contractAddress.startsWith("0x")) return;
+                    try {
+                        const provider = new ethers.BrowserProvider(window.ethereum);
+                        const contract = new ethers.Contract(this.contractAddress, this.contractABI, provider);
+                        const rawEntries = await contract.getAll_Msg();
+                        this.Guest = Array.from(rawEntries).reverse();
+                    } catch (error) { console.error("Fetch Error:", error); }
+                },
+
+                //WRITE MSG
+                async signGuestbook() {
+                    if (!this.message || !this.name) return;
+                    
+                    this.isLoading = true;
+                    this.errorMessage = '';
+
+                    try {
+                        const provider = new ethers.BrowserProvider(window.ethereum);
+                        const signer = await provider.getSigner();
+                        const contract = new ethers.Contract(this.contractAddress, this.contractABI, signer);
+
+                        // ส่ง Transaction
+                        const tx = await contract.Write_Msg(this.name, this.message);
+                        console.log("Tx Hash:", tx.hash);
+                        
+                        // รอ Confirm
+                        await tx.wait(); 
+                        
+                        // ผ่าน
+                        this.message = ''; // เคลียร์ข้อความ
+                        await this.fetchEntries(); // ดึงข้อความใหม่
+
+                        //กลับไปหน้าแรก
+                        this.view = 'home';
+
+                    } catch (error) {
+                        console.error("Write Error:", error);
+                        if (error.reason && error.reason.includes("wait")) {
+                            this.errorMessage = "กรุณารออย่างน้อย 30 วินาทีก่อนส่งข้อความถัดไป";
+                        } else {
+                            this.errorMessage = error.reason || "เกิดข้อผิดพลาด";
+                        }
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+                formatDate(timestamp) {
+                    return new Date(Number(timestamp) * 1000).toLocaleString('th-TH');
+                },
+                shortenAddress(address) {
+                    return address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '';
+                }
+            }
+        }
+    </script>
+</body>
+</html>
